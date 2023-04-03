@@ -165,6 +165,10 @@ enum eos_planetary_material_id {
   /*! ANEOS Fe85Si15 (Stewart 2020) -- in SESAME-style tables */
   eos_planetary_id_ANEOS_Fe85Si15 =
       eos_planetary_type_ANEOS * eos_planetary_type_factor + 2,
+
+  /*! ANEOS pyrolite (Stewart 2022) -- in SESAME-style tables */
+  eos_planetary_id_ANEOS_pyrolite =
+	  eos_planetary_type_ANEOS * eos_planetary_type_factor + 3,
 };
 
 /* Individual EOS function headers. */
@@ -181,7 +185,7 @@ struct eos_parameters {
   struct Til_params Til_iron, Til_granite, Til_water, Til_basalt, Til_ice;
   struct HM80_params HM80_HHe, HM80_ice, HM80_rock;
   struct SESAME_params SESAME_iron, SESAME_basalt, SESAME_water, SS08_water, AQUA, CMS19_H, CMS19_He, CD21_HHe;
-  struct SESAME_params ANEOS_forsterite, ANEOS_iron, ANEOS_Fe85Si15;
+  struct SESAME_params ANEOS_forsterite, ANEOS_iron, ANEOS_Fe85Si15, ANEOS_pyrolite;
 };
 
 /**
@@ -456,6 +460,16 @@ gas_internal_energy_from_entropy(float density, float entropy,
           return SESAME_internal_energy_from_entropy(density, entropy,
                                                      &eos.ANEOS_Fe85Si15);
           break;
+
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_internal_energy_from_entropy(density, entropy,
+													 &eos.ANEOS_pyrolite);
 
         default:
 #ifdef SWIFT_DEBUG_CHECKS
@@ -735,6 +749,17 @@ __attribute__((always_inline)) INLINE static float gas_pressure_from_entropy(
                                               &eos.ANEOS_Fe85Si15);
           break;
 
+        case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_pressure_from_entropy(density, entropy,
+											  &eos.ANEOS_pyrolite);
+          break;
+
         default:
 #ifdef SWIFT_DEBUG_CHECKS
           error("Unknown material ID! mat_id = %d", mat_id);
@@ -1002,6 +1027,16 @@ __attribute__((always_inline)) INLINE static float gas_entropy_from_pressure(
 #endif
           return SESAME_entropy_from_pressure(density, P, &eos.ANEOS_Fe85Si15);
           break;
+
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_entropy_from_pressure(density, P, &eos.ANEOS_pyrolite);
+		  break;
 
         default:
 #ifdef SWIFT_DEBUG_CHECKS
@@ -1281,6 +1316,17 @@ __attribute__((always_inline)) INLINE static float gas_soundspeed_from_entropy(
                                                 &eos.ANEOS_Fe85Si15);
           break;
 
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_soundspeed_from_entropy(density, entropy,
+												&eos.ANEOS_pyrolite);
+          break;
+
         default:
 #ifdef SWIFT_DEBUG_CHECKS
           error("Unknown material ID! mat_id = %d", mat_id);
@@ -1557,6 +1603,17 @@ gas_entropy_from_internal_energy(float density, float u,
           return SESAME_entropy_from_internal_energy(density, u,
                                                      &eos.ANEOS_Fe85Si15);
           break;
+
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_entropy_from_internal_energy(density, u,
+													 &eos.ANEOS_pyrolite);
+		  break;
 
         default:
 #ifdef SWIFT_DEBUG_CHECKS
@@ -1836,6 +1893,17 @@ gas_pressure_from_internal_energy(float density, float u,
           return SESAME_pressure_from_internal_energy(density, u,
                                                       &eos.ANEOS_Fe85Si15);
           break;
+
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_pressure_from_internal_energy(density, u,
+													  &eos.ANEOS_pyrolite);
+		  break;
 
         default:
 #ifdef SWIFT_DEBUG_CHECKS
@@ -2118,6 +2186,17 @@ gas_internal_energy_from_pressure(float density, float P,
           return SESAME_internal_energy_from_pressure(density, P,
                                                       &eos.ANEOS_Fe85Si15);
           break;
+
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_internal_energy_from_pressure(density, P,
+													  &eos.ANEOS_pyrolite);
+		  break;
 
         default:
 #ifdef SWIFT_DEBUG_CHECKS
@@ -2404,6 +2483,17 @@ gas_soundspeed_from_internal_energy(float density, float u,
                                                         &eos.ANEOS_Fe85Si15);
           break;
 
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_soundspeed_from_internal_energy(density, u,
+														&eos.ANEOS_pyrolite);
+		  break;
+
         default:
 #ifdef SWIFT_DEBUG_CHECKS
           error("Unknown material ID! mat_id = %d", mat_id);
@@ -2673,6 +2763,17 @@ __attribute__((always_inline)) INLINE static float gas_soundspeed_from_pressure(
           return SESAME_soundspeed_from_pressure(density, P,
                                                  &eos.ANEOS_Fe85Si15);
           break;
+
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: "
+				"1");
+#endif
+		  return SESAME_soundspeed_from_pressure(density, P,
+												 &eos.ANEOS_pyrolite);
+		  break;
 
         default:
 #ifdef SWIFT_DEBUG_CHECKS
@@ -2944,6 +3045,16 @@ gas_temperature_from_internal_energy(float density, float u,
                                                      &eos.ANEOS_Fe85Si15);
           break;
 
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: 1");
+#endif
+		  return SESAME_temperature_from_internal_energy(density, u,
+													 &eos.ANEOS_pyrolite);
+		  break;
+
         default:
 #ifdef SWIFT_DEBUG_CHECKS
           error("Unknown material ID! mat_id = %d", mat_id);
@@ -3213,6 +3324,16 @@ gas_density_from_pressure_and_temperature(float P, float T,
           return SESAME_density_from_pressure_and_temperature(P, T,
                                                      &eos.ANEOS_Fe85Si15);
           break;
+
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: 1");
+#endif
+		  return SESAME_density_from_pressure_and_temperature(P, T,
+													 &eos.ANEOS_pyrolite);
+		  break;
 
         default:
 #ifdef SWIFT_DEBUG_CHECKS
@@ -3484,6 +3605,16 @@ gas_density_from_pressure_and_internal_energy(float P, float u, float rho_ref, f
                                                      &eos.ANEOS_Fe85Si15);
           break;
 
+		case eos_planetary_id_ANEOS_pyrolite:
+#ifdef SWIFT_DEBUG_CHECKS
+		  if (eos.ANEOS_pyrolite.mat_id != mat_id)
+			error(
+				"EoS not enabled. Please set EoS:planetary_use_ANEOS_pyrolite: 1");
+#endif
+		  return SESAME_density_from_pressure_and_internal_energy(P, u, rho_ref, rho_sph,
+													 &eos.ANEOS_pyrolite);
+		  break;
+
         default:
 #ifdef SWIFT_DEBUG_CHECKS
           error("Unknown material ID! mat_id = %d", mat_id);
@@ -3677,6 +3808,15 @@ __attribute__((always_inline)) INLINE static void eos_init(
     load_table_SESAME(&e->ANEOS_Fe85Si15, ANEOS_Fe85Si15_table_file);
     prepare_table_SESAME(&e->ANEOS_Fe85Si15);
     convert_units_SESAME(&e->ANEOS_Fe85Si15, us);
+  }
+  if (parser_get_opt_param_int(params, "EoS:planetary_use_ANEOS_pyrolite", 0)) {
+	char ANEOS_pyrolite_table_file[PARSER_MAX_LINE_SIZE];
+	set_ANEOS_pyrolite(&e->ANEOS_pyrolite, eos_planetary_id_ANEOS_pyrolite);
+	parser_get_param_string(params, "EoS:planetary_ANEOS_pyrolite_table_file",
+							ANEOS_pyrolite_table_file);
+	load_table_SESAME(&e->ANEOS_pyrolite, ANEOS_pyrolite_table_file);
+	prepare_table_SESAME(&e->ANEOS_pyrolite);
+	convert_units_SESAME(&e->ANEOS_pyrolite, us);
   }
 }
 

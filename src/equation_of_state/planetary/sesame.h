@@ -42,11 +42,15 @@
 
 // SESAME parameters
 struct SESAME_params {
+  float *table_rho;
   float *table_log_rho;
+  float *table_T;
   float *table_log_T;
+  float *table_u_rho_T;
   float *table_log_u_rho_T;
   float *table_P_rho_T;
   float *table_c_rho_T;
+  float *table_s_rho_T;
   float *table_log_s_rho_T;
   int version_date, num_rho, num_T;
   float u_tiny, P_tiny, c_tiny, s_tiny;
@@ -120,6 +124,13 @@ INLINE static void set_ANEOS_Fe85Si15(struct SESAME_params *mat,
   mat->mat_id = mat_id;
   mat->version_date = 20220714;
 }
+INLINE static void set_ANEOS_pyrolite(struct SESAME_params *mat,
+                                      enum eos_planetary_material_id mat_id) {
+  // Stewart (2022)
+  mat->mat_id = mat_id;
+  mat->version_date = 20210627;
+}
+
 
 /*
     Skip a line while reading a file.
@@ -193,14 +204,20 @@ INLINE static void load_table_SESAME(struct SESAME_params *mat,
   float ignore;
 
   // Allocate table memory
+  mat->table_rho = (float *)malloc(mat->num_rho * sizeof(float));
   mat->table_log_rho = (float *)malloc(mat->num_rho * sizeof(float));
+  mat->table_T = (float *)malloc(mat->num_T * sizeof(float));
   mat->table_log_T = (float *)malloc(mat->num_T * sizeof(float));
-  mat->table_log_u_rho_T =
+  mat->table_u_rho_T =
       (float *)malloc(mat->num_rho * mat->num_T * sizeof(float));
+  mat->table_log_u_rho_T =
+        (float *)malloc(mat->num_rho * mat->num_T * sizeof(float));
   mat->table_P_rho_T =
       (float *)malloc(mat->num_rho * mat->num_T * sizeof(float));
   mat->table_c_rho_T =
       (float *)malloc(mat->num_rho * mat->num_T * sizeof(float));
+  mat->table_s_rho_T =
+        (float *)malloc(mat->num_rho * mat->num_T * sizeof(float));
   mat->table_log_s_rho_T =
       (float *)malloc(mat->num_rho * mat->num_T * sizeof(float));
 
@@ -211,7 +228,7 @@ INLINE static void load_table_SESAME(struct SESAME_params *mat,
       c = fscanf(f, "%f", &ignore);
       if (c != 1) error("Failed to read the SESAME EoS table %s", table_file);
     } else {
-      c = fscanf(f, "%f", &mat->table_log_rho[i_rho]);
+      c = fscanf(f, "%f", &mat->table_rho[i_rho]);
       if (c != 1) error("Failed to read the SESAME EoS table %s", table_file);
     }
   }
@@ -223,7 +240,7 @@ INLINE static void load_table_SESAME(struct SESAME_params *mat,
       c = fscanf(f, "%f", &ignore);
       if (c != 1) error("Failed to read the SESAME EoS table %s", table_file);
     } else {
-      c = fscanf(f, "%f", &mat->table_log_T[i_T]);
+      c = fscanf(f, "%f", &mat->table_T[i_T]);
       if (c != 1) error("Failed to read the SESAME EoS table %s", table_file);
     }
   }
@@ -238,10 +255,10 @@ INLINE static void load_table_SESAME(struct SESAME_params *mat,
         if (c != 4) error("Failed to read the SESAME EoS table %s", table_file);
       } else {
         c = fscanf(f, "%f %f %f %f",
-                   &mat->table_log_u_rho_T[i_rho * mat->num_T + i_T],
+                   &mat->table_u_rho_T[i_rho * mat->num_T + i_T],
                    &mat->table_P_rho_T[i_rho * mat->num_T + i_T],
                    &mat->table_c_rho_T[i_rho * mat->num_T + i_T],
-                   &mat->table_log_s_rho_T[i_rho * mat->num_T + i_T]);
+                   &mat->table_s_rho_T[i_rho * mat->num_T + i_T]);
         if (c != 4) error("Failed to read the SESAME EoS table %s", table_file);
       }
     }
@@ -255,11 +272,11 @@ INLINE static void prepare_table_SESAME(struct SESAME_params *mat) {
 
   // Convert densities to log(density)
   for (int i_rho = 0; i_rho < mat->num_rho; i_rho++) {
-    mat->table_log_rho[i_rho] = logf(mat->table_log_rho[i_rho]);
+    mat->table_log_rho[i_rho] = logf(mat->table_rho[i_rho]);
   }
   // Convert temperatures to log(temperature)
   for (int i_T = 0; i_T < mat->num_T; i_T++) {
-    mat->table_log_T[i_T] = logf(mat->table_log_T[i_T]);
+    mat->table_log_T[i_T] = logf(mat->table_T[i_T]);
   }
 
   // Initialise tiny values
@@ -275,11 +292,11 @@ INLINE static void prepare_table_SESAME(struct SESAME_params *mat) {
     for (int i_T = mat->num_T - 1; i_T > 0; i_T--) {
 
       // If the one-lower-T u is greater than this u
-      if (mat->table_log_u_rho_T[i_rho * mat->num_T + i_T] <
-          mat->table_log_u_rho_T[i_rho * mat->num_T + i_T - 1]) {
+      if (mat->table_u_rho_T[i_rho * mat->num_T + i_T] <
+          mat->table_u_rho_T[i_rho * mat->num_T + i_T - 1]) {
 
-          mat->table_log_u_rho_T[i_rho * mat->num_T + i_T - 1] =
-          mat->table_log_u_rho_T[i_rho * mat->num_T + i_T];
+          mat->table_u_rho_T[i_rho * mat->num_T + i_T - 1] =
+          mat->table_u_rho_T[i_rho * mat->num_T + i_T];
           /*
         // Replace it and all elements below it with that value
         for (int j_T = 0; j_T < i_T; j_T++) {
@@ -291,9 +308,9 @@ INLINE static void prepare_table_SESAME(struct SESAME_params *mat) {
       }
 
       // Smallest positive values
-      if ((mat->table_log_u_rho_T[i_rho * mat->num_T + i_T] < mat->u_tiny) &&
-          (mat->table_log_u_rho_T[i_rho * mat->num_T + i_T] > 0)) {
-        mat->u_tiny = mat->table_log_u_rho_T[i_rho * mat->num_T + i_T];
+      if ((mat->table_u_rho_T[i_rho * mat->num_T + i_T] < mat->u_tiny) &&
+          (mat->table_u_rho_T[i_rho * mat->num_T + i_T] > 0)) {
+        mat->u_tiny = mat->table_u_rho_T[i_rho * mat->num_T + i_T];
       }
       if ((mat->table_P_rho_T[i_rho * mat->num_T + i_T] < mat->P_tiny) &&
           (mat->table_P_rho_T[i_rho * mat->num_T + i_T] > 0)) {
@@ -303,9 +320,9 @@ INLINE static void prepare_table_SESAME(struct SESAME_params *mat) {
           (mat->table_c_rho_T[i_rho * mat->num_T + i_T] > 0)) {
         mat->c_tiny = mat->table_c_rho_T[i_rho * mat->num_T + i_T];
       }
-      if ((mat->table_log_s_rho_T[i_rho * mat->num_T + i_T] < mat->s_tiny) &&
-          (mat->table_log_s_rho_T[i_rho * mat->num_T + i_T] > 0)) {
-        mat->s_tiny = mat->table_log_s_rho_T[i_rho * mat->num_T + i_T];
+      if ((mat->table_s_rho_T[i_rho * mat->num_T + i_T] < mat->s_tiny) &&
+          (mat->table_s_rho_T[i_rho * mat->num_T + i_T] > 0)) {
+        mat->s_tiny = mat->table_s_rho_T[i_rho * mat->num_T + i_T];
       }
     }
   }
@@ -320,19 +337,19 @@ INLINE static void prepare_table_SESAME(struct SESAME_params *mat) {
   for (int i_rho = 0; i_rho < mat->num_rho; i_rho++) {
     for (int i_T = 0; i_T < mat->num_T; i_T++) {
       // If not positive then set very small for the log
-      if (mat->table_log_u_rho_T[i_rho * mat->num_T + i_T] <= 0) {
-        mat->table_log_u_rho_T[i_rho * mat->num_T + i_T] = mat->u_tiny;
+      if (mat->table_u_rho_T[i_rho * mat->num_T + i_T] <= 0) {
+        mat->table_u_rho_T[i_rho * mat->num_T + i_T] = mat->u_tiny;
       }
 
       mat->table_log_u_rho_T[i_rho * mat->num_T + i_T] =
-          logf(mat->table_log_u_rho_T[i_rho * mat->num_T + i_T]);
+          logf(mat->table_u_rho_T[i_rho * mat->num_T + i_T]);
 
-      if (mat->table_log_s_rho_T[i_rho * mat->num_T + i_T] <= 0) {
-        mat->table_log_s_rho_T[i_rho * mat->num_T + i_T] = mat->s_tiny;
+      if (mat->table_s_rho_T[i_rho * mat->num_T + i_T] <= 0) {
+        mat->table_s_rho_T[i_rho * mat->num_T + i_T] = mat->s_tiny;
       }
 
       mat->table_log_s_rho_T[i_rho * mat->num_T + i_T] =
-          logf(mat->table_log_s_rho_T[i_rho * mat->num_T + i_T]);
+          logf(mat->table_s_rho_T[i_rho * mat->num_T + i_T]);
 
       // Ensure P > 0
       if (mat->table_P_rho_T[i_rho * mat->num_T + i_T] <= 0) {
@@ -352,35 +369,49 @@ INLINE static void convert_units_SESAME(struct SESAME_params *mat,
 
   // Densities (log)
   for (int i_rho = 0; i_rho < mat->num_rho; i_rho++) {
+    mat->table_rho[i_rho] *=
+        units_cgs_conversion_factor(&si, UNIT_CONV_DENSITY) /
+             units_cgs_conversion_factor(us, UNIT_CONV_DENSITY);
     mat->table_log_rho[i_rho] +=
-        logf(units_cgs_conversion_factor(&si, UNIT_CONV_DENSITY) /
-             units_cgs_conversion_factor(us, UNIT_CONV_DENSITY));
+            logf(units_cgs_conversion_factor(&si, UNIT_CONV_DENSITY) /
+                 units_cgs_conversion_factor(us, UNIT_CONV_DENSITY));
   }
 
   // Temperatures (log)
   for (int i_T = 0; i_T < mat->num_T; i_T++) {
+    mat->table_T[i_T] *=
+        units_cgs_conversion_factor(&si, UNIT_CONV_TEMPERATURE) /
+             units_cgs_conversion_factor(us, UNIT_CONV_TEMPERATURE);
     mat->table_log_T[i_T] +=
-        logf(units_cgs_conversion_factor(&si, UNIT_CONV_TEMPERATURE) /
-             units_cgs_conversion_factor(us, UNIT_CONV_TEMPERATURE));
+            logf(units_cgs_conversion_factor(&si, UNIT_CONV_TEMPERATURE) /
+                 units_cgs_conversion_factor(us, UNIT_CONV_TEMPERATURE));
   }
 
   // Sp. int. energies (log), pressures, sound speeds, and sp. entropies
   for (int i_rho = 0; i_rho < mat->num_rho; i_rho++) {
     for (int i_T = 0; i_T < mat->num_T; i_T++) {
-      mat->table_log_u_rho_T[i_rho * mat->num_T + i_T] += logf(
+      mat->table_u_rho_T[i_rho * mat->num_T + i_T] *=
           units_cgs_conversion_factor(&si, UNIT_CONV_ENERGY_PER_UNIT_MASS) /
-          units_cgs_conversion_factor(us, UNIT_CONV_ENERGY_PER_UNIT_MASS));
+          units_cgs_conversion_factor(us, UNIT_CONV_ENERGY_PER_UNIT_MASS);
+      mat->table_log_u_rho_T[i_rho * mat->num_T + i_T] += logf(
+                units_cgs_conversion_factor(&si, UNIT_CONV_ENERGY_PER_UNIT_MASS) /
+                units_cgs_conversion_factor(us, UNIT_CONV_ENERGY_PER_UNIT_MASS));
       mat->table_P_rho_T[i_rho * mat->num_T + i_T] *=
           units_cgs_conversion_factor(&si, UNIT_CONV_PRESSURE) /
           units_cgs_conversion_factor(us, UNIT_CONV_PRESSURE);
       mat->table_c_rho_T[i_rho * mat->num_T + i_T] *=
           units_cgs_conversion_factor(&si, UNIT_CONV_SPEED) /
           units_cgs_conversion_factor(us, UNIT_CONV_SPEED);
-      mat->table_log_s_rho_T[i_rho * mat->num_T + i_T] +=
-          logf(units_cgs_conversion_factor(
+      mat->table_s_rho_T[i_rho * mat->num_T + i_T] *=
+          units_cgs_conversion_factor(
                    &si, UNIT_CONV_PHYSICAL_ENTROPY_PER_UNIT_MASS) /
                units_cgs_conversion_factor(
-                   us, UNIT_CONV_PHYSICAL_ENTROPY_PER_UNIT_MASS));
+                   us, UNIT_CONV_PHYSICAL_ENTROPY_PER_UNIT_MASS);
+      mat->table_log_s_rho_T[i_rho * mat->num_T + i_T] +=
+                logf(units_cgs_conversion_factor(
+                         &si, UNIT_CONV_PHYSICAL_ENTROPY_PER_UNIT_MASS) /
+                     units_cgs_conversion_factor(
+                         us, UNIT_CONV_PHYSICAL_ENTROPY_PER_UNIT_MASS));
     }
   }
 
@@ -402,53 +433,56 @@ INLINE static void convert_units_SESAME(struct SESAME_params *mat,
 INLINE static float SESAME_internal_energy_from_entropy(
     float density, float entropy, const struct SESAME_params *mat) {
 
-  float u, log_u_1, log_u_2, log_u_3, log_u_4;
+	float u, u_1, u_2, u_3, u_4;
 
   if (entropy <= 0.f) {
-    return 0.f;
+	return 0.f;
   }
 
   int idx_rho, idx_s_1, idx_s_2;
   float intp_rho, intp_s_1, intp_s_2;
-  const float log_rho = logf(density);
-  const float log_s = logf(entropy);
+  //const float log_rho = logf(density);
+  const float rho = density;
+  //const float log_s = logf(entropy);
+  const float s = entropy;
 
   // 2D interpolation (bilinear with log(rho), log(s)) to find u(rho, s))
   // Density index
   idx_rho =
-      find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);
+	  find_value_in_monot_incr_array(rho, mat->table_rho, mat->num_rho);
+      //find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);
 
   // Sp. entropy at this and the next density (in relevant slice of s array)
   idx_s_1 = find_value_in_monot_incr_array(
-      log_s, mat->table_log_s_rho_T + idx_rho * mat->num_T, mat->num_T);
+	  s, mat->table_s_rho_T + idx_rho * mat->num_T, mat->num_T);
+      //log_s, mat->table_log_s_rho_T + idx_rho * mat->num_T, mat->num_T);
   idx_s_2 = find_value_in_monot_incr_array(
-      log_s, mat->table_log_s_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
-
-  // If outside the table then extrapolate from the edge and edge-but-one values
-  if (idx_rho <= -1) {
-    idx_rho = 0;
-  } else if (idx_rho >= mat->num_rho) {
-    idx_rho = mat->num_rho - 2;
-  }
-  if (idx_s_1 <= -1) {
-    idx_s_1 = 0;
-  } else if (idx_s_1 >= mat->num_T) {
-    idx_s_1 = mat->num_T - 2;
-  }
-  if (idx_s_2 <= -1) {
-    idx_s_2 = 0;
-  } else if (idx_s_2 >= mat->num_T) {
-    idx_s_2 = mat->num_T - 2;
-  }
+	  s, mat->table_s_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+	  //log_s, mat->table_log_s_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
 
   // Check for duplicates in SESAME tables before interpolation
-  if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
+  if (mat->table_rho[idx_rho + 1] != mat->table_rho[idx_rho]) {
+    intp_rho = (rho - mat->table_rho[idx_rho]) /
+               (mat->table_rho[idx_rho + 1] - mat->table_rho[idx_rho]);
+  } else {
+    intp_rho = 1.f;
+  }
+  /*if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
     intp_rho = (log_rho - mat->table_log_rho[idx_rho]) /
                (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]);
   } else {
     intp_rho = 1.f;
+  }*/
+  if (mat->table_s_rho_T[idx_rho * mat->num_T + (idx_s_1 + 1)] !=
+        mat->table_s_rho_T[idx_rho * mat->num_T + idx_s_1]) {
+    intp_s_1 =
+        (s - mat->table_s_rho_T[idx_rho * mat->num_T + idx_s_1]) /
+        (mat->table_s_rho_T[idx_rho * mat->num_T + (idx_s_1 + 1)] -
+         mat->table_s_rho_T[idx_rho * mat->num_T + idx_s_1]);
+  } else {
+    intp_s_1 = 1.f;
   }
-  if (mat->table_log_s_rho_T[idx_rho * mat->num_T + (idx_s_1 + 1)] !=
+  /*if (mat->table_log_s_rho_T[idx_rho * mat->num_T + (idx_s_1 + 1)] !=
       mat->table_log_s_rho_T[idx_rho * mat->num_T + idx_s_1]) {
     intp_s_1 =
         (log_s - mat->table_log_s_rho_T[idx_rho * mat->num_T + idx_s_1]) /
@@ -456,8 +490,17 @@ INLINE static float SESAME_internal_energy_from_entropy(
          mat->table_log_s_rho_T[idx_rho * mat->num_T + idx_s_1]);
   } else {
     intp_s_1 = 1.f;
+  }*/
+  if (mat->table_s_rho_T[(idx_rho + 1) * mat->num_T + (idx_s_2 + 1)] !=
+      mat->table_s_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2]) {
+    intp_s_2 =
+        (s - mat->table_s_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2]) /
+        (mat->table_s_rho_T[(idx_rho + 1) * mat->num_T + (idx_s_2 + 1)] -
+         mat->table_s_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2]);
+  } else {
+    intp_s_2 = 1.f;
   }
-  if (mat->table_log_s_rho_T[(idx_rho + 1) * mat->num_T + (idx_s_2 + 1)] !=
+  /*if (mat->table_log_s_rho_T[(idx_rho + 1) * mat->num_T + (idx_s_2 + 1)] !=
       mat->table_log_s_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2]) {
     intp_s_2 =
         (log_s - mat->table_log_s_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2]) /
@@ -465,27 +508,27 @@ INLINE static float SESAME_internal_energy_from_entropy(
          mat->table_log_s_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2]);
   } else {
     intp_s_2 = 1.f;
-  }
+  }*/
 
   // Table values
-  log_u_1 = mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_s_1];
-  log_u_2 = mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_s_1 + 1];
-  log_u_3 = mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2];
-  log_u_4 = mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2 + 1];
+  u_1 = mat->table_u_rho_T[idx_rho * mat->num_T + idx_s_1];
+  u_2 = mat->table_u_rho_T[idx_rho * mat->num_T + idx_s_1 + 1];
+  u_3 = mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2];
+  u_4 = mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_s_2 + 1];
 
   // If below the minimum s at this rho then just use the lowest table values
   if ((idx_rho > 0.f) && ((intp_s_1 < 0.f) || (intp_s_2 < 0.f) ||
-                          (log_u_1 > log_u_2) || (log_u_3 > log_u_4))) {
+                          (u_1 > u_2) || (u_3 > u_4))) {
     intp_s_1 = 0;
     intp_s_2 = 0;
   }
 
-  // Interpolate with the log values
-  u = (1.f - intp_rho) * ((1.f - intp_s_1) * log_u_1 + intp_s_1 * log_u_2) +
-      intp_rho * ((1.f - intp_s_2) * log_u_3 + intp_s_2 * log_u_4);
+  // Interpolate with the linear values
+  u = (1.f - intp_rho) * ((1.f - intp_s_1) * (u_1) + intp_s_1 * (u_2)) +
+      intp_rho * ((1.f - intp_s_2) * (u_3) + intp_s_2 * (u_4));
 
   // Convert back from log
-  u = expf(u);
+  //u = expf(u);
 
   return u;
 }
@@ -521,7 +564,141 @@ INLINE static float SESAME_soundspeed_from_entropy(
 INLINE static float SESAME_entropy_from_internal_energy(
     float density, float u, const struct SESAME_params *mat) {
 
-  return 0.f;
+#ifndef PLANETARY_FIXED_ENTROPY
+	return 0.f;
+#endif
+
+	float s, s_1, s_2, s_3, s_4;
+
+  if (u <= 0.f) {
+		return 0.f;
+  }
+
+  int idx_rho, idx_u_1, idx_u_2;
+  float intp_rho, intp_u_1, intp_u_2;
+  const float rho = density;
+  //const float log_rho = logf(density);
+  const float uu = u;
+  //const float log_u = logf(energy);
+
+  // 2D interpolation (bilinear with log(rho), log(u)) to find s(rho, u)
+  // Density index
+  idx_rho =
+	  find_value_in_monot_incr_array(rho, mat->table_rho, mat->num_rho);
+	  //find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);
+
+  // Sp. int. energy at this and the next density (in relevant slice of u array)
+  idx_u_1 = find_value_in_monot_incr_array(
+	  uu, mat->table_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+	  //log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+  idx_u_2 = find_value_in_monot_incr_array(
+	  uu, mat->table_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+	  //log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+
+  // If outside the table then extrapolate from the edge and edge-but-one values
+  if (idx_rho <= -1) {
+	idx_rho = 0;
+  } else if (idx_rho >= mat->num_rho) {
+	idx_rho = mat->num_rho - 2;
+  }
+  if (idx_u_1 <= -1) {
+	idx_u_1 = 0;
+  } else if (idx_u_1 >= mat->num_T) {
+	idx_u_1 = mat->num_T - 2;
+  }
+  if (idx_u_2 <= -1) {
+	idx_u_2 = 0;
+  } else if (idx_u_2 >= mat->num_T) {
+	idx_u_2 = mat->num_T - 2;
+  }
+
+  // Check for duplicates in SESAME tables before interpolation
+  if (mat->table_rho[idx_rho + 1] != mat->table_rho[idx_rho]) {
+	intp_rho = (rho - mat->table_rho[idx_rho]) /
+			   (mat->table_rho[idx_rho + 1] - mat->table_rho[idx_rho]);
+  } else {
+	intp_rho = 1.f;
+  }
+  /*if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
+	intp_rho = (log_rho - mat->table_log_rho[idx_rho]) /
+			   (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]);
+  } else {
+	intp_rho = 1.f;
+  }*/
+  if (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+	  mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+	intp_u_1 =
+		(uu - mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+		(mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+		 mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+  } else {
+	intp_u_1 = 1.f;
+  }
+  /*if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+	  mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+	intp_u_1 =
+		(log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+		(mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+		 mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+  } else {
+	intp_u_1 = 1.f;
+  }*/
+  if (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+	  mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+	intp_u_2 =
+		(uu - mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+		(mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+		 mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+  } else {
+	intp_u_2 = 1.f;
+  }
+  /*if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+	  mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+	intp_u_2 =
+		(log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+		(mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+		 mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+  } else {
+	intp_u_2 = 1.f;
+  }*/
+   // Table values
+  s_1 = mat->table_s_rho_T[idx_rho * mat->num_T + idx_u_1];
+  s_2 = mat->table_s_rho_T[idx_rho * mat->num_T + idx_u_1 + 1];
+  s_3 = mat->table_s_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2];
+  s_4 = mat->table_s_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2 + 1];
+
+  // If below the minimum u at this rho then just use the lowest table values
+  if ((idx_rho > 0.f) &&
+	  ((intp_u_1 < 0.f) || (intp_u_2 < 0.f) || (s_1 > s_2) || (s_3 > s_4))) {
+	intp_u_1 = 0;
+	intp_u_2 = 0;
+  }
+
+  // If more than two table values are non-positive then return zero
+  int num_non_pos = 0;
+  if (s_1 <= 0.f) num_non_pos++;
+  if (s_2 <= 0.f) num_non_pos++;
+  if (s_3 <= 0.f) num_non_pos++;
+  if (s_4 <= 0.f) num_non_pos++;
+  if (num_non_pos > 0) {
+	// If just one or two are non-positive then replace them with a tiny value
+	// Unless already trying to extrapolate in which case return zero
+	if ((num_non_pos > 2) || (mat->s_tiny == 0.f) || (intp_rho < 0.f) ||
+		(intp_u_1 < 0.f) || (intp_u_2 < 0.f)) {
+	  return 0.f;
+	}
+	if (s_1 <= 0.f) s_1 = mat->s_tiny;
+	if (s_2 <= 0.f) s_2 = mat->s_tiny;
+	if (s_3 <= 0.f) s_3 = mat->s_tiny;
+	if (s_4 <= 0.f) s_4 = mat->s_tiny;
+  }
+
+  // Interpolate with the linear values
+  s = (1.f - intp_rho) * ((1.f - intp_u_1) * (s_1) + intp_u_1 * (s_2)) +
+	  intp_rho * ((1.f - intp_u_2) * (s_3) + intp_u_2 * (s_4));
+  //s = expf(s);
+  return s;
+
 }
 
 // gas_pressure_from_internal_energy
@@ -531,67 +708,96 @@ INLINE static float SESAME_pressure_from_internal_energy(
   float P, P_1, P_2, P_3, P_4;
 
   if (u <= 0.f) {
-    return 0.f;
+	return 0.f;
   }
 
   int idx_rho, idx_u_1, idx_u_2;
   float intp_rho, intp_u_1, intp_u_2;
-  const float log_rho = logf(density);
-  const float log_u = logf(u);
+  const float rho = density;
+  //const float log_rho = logf(density);
+  const float uu = u;
+  //const float log_u = logf(energy);
 
   // 2D interpolation (bilinear with log(rho), log(u)) to find P(rho, u))
   // Density index
   idx_rho =
-      find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);
+	  find_value_in_monot_incr_array(rho, mat->table_rho, mat->num_rho);
+	  //find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);
 
   // Sp. int. energy at this and the next density (in relevant slice of u array)
   idx_u_1 = find_value_in_monot_incr_array(
-      log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+	  uu, mat->table_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+	  //log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
   idx_u_2 = find_value_in_monot_incr_array(
-      log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+	  uu, mat->table_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+	  //log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
 
   // If outside the table then extrapolate from the edge and edge-but-one values
   if (idx_rho <= -1) {
-    idx_rho = 0;
+	idx_rho = 0;
   } else if (idx_rho >= mat->num_rho) {
-    idx_rho = mat->num_rho - 2;
+	idx_rho = mat->num_rho - 2;
   }
   if (idx_u_1 <= -1) {
-    idx_u_1 = 0;
+	idx_u_1 = 0;
   } else if (idx_u_1 >= mat->num_T) {
-    idx_u_1 = mat->num_T - 2;
+	idx_u_1 = mat->num_T - 2;
   }
   if (idx_u_2 <= -1) {
-    idx_u_2 = 0;
+	idx_u_2 = 0;
   } else if (idx_u_2 >= mat->num_T) {
-    idx_u_2 = mat->num_T - 2;
+	idx_u_2 = mat->num_T - 2;
   }
 
   // Check for duplicates in SESAME tables before interpolation
-  if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
-    intp_rho = (log_rho - mat->table_log_rho[idx_rho]) /
-               (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]);
+  if (mat->table_rho[idx_rho + 1] != mat->table_rho[idx_rho]) {
+	intp_rho = (rho - mat->table_rho[idx_rho]) /
+			   (mat->table_rho[idx_rho + 1] - mat->table_rho[idx_rho]);
   } else {
-    intp_rho = 1.f;
+	intp_rho = 1.f;
   }
-  if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
-      mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
-    intp_u_1 =
-        (log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
-        (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
-         mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+  /*if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
+	intp_rho = (log_rho - mat->table_log_rho[idx_rho]) /
+			   (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]);
   } else {
-    intp_u_1 = 1.f;
-  }
-  if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
-      mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
-    intp_u_2 =
-        (log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
-        (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
-         mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+	intp_rho = 1.f;
+  }*/
+  if (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+	  mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+	intp_u_1 =
+		(uu - mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+		(mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+		 mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
   } else {
-    intp_u_2 = 1.f;
+	intp_u_1 = 1.f;
   }
+  /*if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+	  mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+	intp_u_1 =
+		(log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+		(mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+		 mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+  } else {
+	intp_u_1 = 1.f;
+  }*/
+  if (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+	  mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+	intp_u_2 =
+		(uu - mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+		(mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+		 mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+  } else {
+	intp_u_2 = 1.f;
+  }
+  /*if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+	  mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+	intp_u_2 =
+		(log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+		(mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+		 mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+  } else {
+	intp_u_2 = 1.f;
+  }*/
 
   // Table values
   P_1 = mat->table_P_rho_T[idx_rho * mat->num_T + idx_u_1];
@@ -601,9 +807,9 @@ INLINE static float SESAME_pressure_from_internal_energy(
 
   // If below the minimum u at this rho then just use the lowest table values
   if ((idx_rho > 0.f) &&
-      ((intp_u_1 < 0.f) || (intp_u_2 < 0.f) || (P_1 > P_2) || (P_3 > P_4))) {
-    intp_u_1 = 0;
-    intp_u_2 = 0;
+	  ((intp_u_1 < 0.f) || (intp_u_2 < 0.f) || (P_1 > P_2) || (P_3 > P_4))) {
+	intp_u_1 = 0;
+	intp_u_2 = 0;
   }
 
   // If more than two table values are non-positive then return zero
@@ -613,29 +819,29 @@ INLINE static float SESAME_pressure_from_internal_energy(
   if (P_3 <= 0.f) num_non_pos++;
   if (P_4 <= 0.f) num_non_pos++;
   if (num_non_pos > 0) {
-    // If just one or two are non-positive then replace them with a tiny value
-    // Unless already trying to extrapolate in which case return zero
-    if ((num_non_pos > 2) || (mat->P_tiny == 0.f) || (intp_rho < 0.f) ||
-        (intp_u_1 < 0.f) || (intp_u_2 < 0.f)) {
-      return 0.f;
-    }
-    if (P_1 <= 0.f) P_1 = mat->P_tiny;
-    if (P_2 <= 0.f) P_2 = mat->P_tiny;
-    if (P_3 <= 0.f) P_3 = mat->P_tiny;
-    if (P_4 <= 0.f) P_4 = mat->P_tiny;
+	// If just one or two are non-positive then replace them with a tiny value
+	// Unless already trying to extrapolate in which case return zero
+	if ((num_non_pos > 2) || (mat->P_tiny == 0.f) || (intp_rho < 0.f) ||
+		(intp_u_1 < 0.f) || (intp_u_2 < 0.f)) {
+	  return 0.f;
+	}
+	if (P_1 <= 0.f) P_1 = mat->P_tiny;
+	if (P_2 <= 0.f) P_2 = mat->P_tiny;
+	if (P_3 <= 0.f) P_3 = mat->P_tiny;
+	if (P_4 <= 0.f) P_4 = mat->P_tiny;
   }
 
   // Interpolate with the log values
-  P_1 = logf(P_1);
-  P_2 = logf(P_2);
-  P_3 = logf(P_3);
-  P_4 = logf(P_4);
+  //P_1 = logf(P_1);
+  //P_2 = logf(P_2);
+  //P_3 = logf(P_3);
+  //P_4 = logf(P_4);
 
   P = (1.f - intp_rho) * ((1.f - intp_u_1) * P_1 + intp_u_1 * P_2) +
-      intp_rho * ((1.f - intp_u_2) * P_3 + intp_u_2 * P_4);
+	  intp_rho * ((1.f - intp_u_2) * P_3 + intp_u_2 * P_4);
 
   // Convert back from log
-  P = expf(P);
+  //P = expf(P);
 
   return P;
 }
@@ -656,67 +862,96 @@ INLINE static float SESAME_soundspeed_from_internal_energy(
   float c, c_1, c_2, c_3, c_4;
 
   if (u <= 0.f) {
-    return 0.f;
+	return 0.f;
   }
 
   int idx_rho, idx_u_1, idx_u_2;
   float intp_rho, intp_u_1, intp_u_2;
-  const float log_rho = logf(density);
-  const float log_u = logf(u);
+  const float rho = density;
+  //const float log_rho = logf(density);
+  const float uu = u;
+  //const float log_u = logf(energy);
 
   // 2D interpolation (bilinear with log(rho), log(u)) to find c(rho, u))
   // Density index
   idx_rho =
-      find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);
+	  find_value_in_monot_incr_array(rho, mat->table_rho, mat->num_rho);
+	  //find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);
 
   // Sp. int. energy at this and the next density (in relevant slice of u array)
   idx_u_1 = find_value_in_monot_incr_array(
-      log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+	  uu, mat->table_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+	  //log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
   idx_u_2 = find_value_in_monot_incr_array(
-      log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+	  uu, mat->table_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+	  //log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
 
   // If outside the table then extrapolate from the edge and edge-but-one values
   if (idx_rho <= -1) {
-    idx_rho = 0;
+	idx_rho = 0;
   } else if (idx_rho >= mat->num_rho) {
-    idx_rho = mat->num_rho - 2;
+	idx_rho = mat->num_rho - 2;
   }
   if (idx_u_1 <= -1) {
-    idx_u_1 = 0;
+	idx_u_1 = 0;
   } else if (idx_u_1 >= mat->num_T) {
-    idx_u_1 = mat->num_T - 2;
+	idx_u_1 = mat->num_T - 2;
   }
   if (idx_u_2 <= -1) {
-    idx_u_2 = 0;
+	idx_u_2 = 0;
   } else if (idx_u_2 >= mat->num_T) {
-    idx_u_2 = mat->num_T - 2;
+	idx_u_2 = mat->num_T - 2;
   }
 
   // Check for duplicates in SESAME tables before interpolation
-  if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
-    intp_rho = (log_rho - mat->table_log_rho[idx_rho]) /
-               (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]);
+  if (mat->table_rho[idx_rho + 1] != mat->table_rho[idx_rho]) {
+	intp_rho = (rho - mat->table_rho[idx_rho]) /
+			   (mat->table_rho[idx_rho + 1] - mat->table_rho[idx_rho]);
   } else {
-    intp_rho = 1.f;
+	intp_rho = 1.f;
   }
-  if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
-      mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
-    intp_u_1 =
-        (log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
-        (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
-         mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+  /*if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
+	intp_rho = (log_rho - mat->table_log_rho[idx_rho]) /
+			   (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]);
   } else {
-    intp_u_1 = 1.f;
-  }
-  if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
-      mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
-    intp_u_2 =
-        (log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
-        (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
-         mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+	intp_rho = 1.f;
+  }*/
+  if (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+	  mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+	intp_u_1 =
+		(uu - mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+		(mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+		 mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
   } else {
-    intp_u_2 = 1.f;
+	intp_u_1 = 1.f;
   }
+  /*if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+	  mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+	intp_u_1 =
+		(log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+		(mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+		 mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+  } else {
+	intp_u_1 = 1.f;
+  }*/
+  if (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+	  mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+	intp_u_2 =
+		(uu - mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+		(mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+		 mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+  } else {
+	intp_u_2 = 1.f;
+  }
+  /*if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+	  mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+	intp_u_2 =
+		(log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+		(mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+		 mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+  } else {
+	intp_u_2 = 1.f;
+  }*/
 
   // Table values
   c_1 = mat->table_c_rho_T[idx_rho * mat->num_T + idx_u_1];
@@ -731,38 +966,38 @@ INLINE static float SESAME_soundspeed_from_internal_energy(
   if (c_3 <= 0.f) num_non_pos++;
   if (c_4 <= 0.f) num_non_pos++;
   if (num_non_pos > 2) {
-    return mat->c_tiny;
+	return mat->c_tiny;
   }
   // If just one or two are non-positive then replace them with a tiny value
   else if (num_non_pos > 0) {
-    // Unless already trying to extrapolate in which case return zero
-    if ((intp_rho < 0.f) || (intp_u_1 < 0.f) || (intp_u_2 < 0.f)) {
-      return mat->c_tiny;
-    }
-    if (c_1 <= 0.f) c_1 = mat->c_tiny;
-    if (c_2 <= 0.f) c_2 = mat->c_tiny;
-    if (c_3 <= 0.f) c_3 = mat->c_tiny;
-    if (c_4 <= 0.f) c_4 = mat->c_tiny;
+	// Unless already trying to extrapolate in which case return zero
+	if ((intp_rho < 0.f) || (intp_u_1 < 0.f) || (intp_u_2 < 0.f)) {
+	  return mat->c_tiny;
+	}
+	if (c_1 <= 0.f) c_1 = mat->c_tiny;
+	if (c_2 <= 0.f) c_2 = mat->c_tiny;
+	if (c_3 <= 0.f) c_3 = mat->c_tiny;
+	if (c_4 <= 0.f) c_4 = mat->c_tiny;
   }
 
   // Interpolate with the log values
-  c_1 = logf(c_1);
-  c_2 = logf(c_2);
-  c_3 = logf(c_3);
-  c_4 = logf(c_4);
+  //c_1 = logf(c_1);
+  //c_2 = logf(c_2);
+  //c_3 = logf(c_3);
+  //c_4 = logf(c_4);
 
   // If below the minimum u at this rho then just use the lowest table values
   if ((idx_rho > 0.f) &&
-      ((intp_u_1 < 0.f) || (intp_u_2 < 0.f) || (c_1 > c_2) || (c_3 > c_4))) {
-    intp_u_1 = 0;
-    intp_u_2 = 0;
+	  ((intp_u_1 < 0.f) || (intp_u_2 < 0.f) || (c_1 > c_2) || (c_3 > c_4))) {
+	intp_u_1 = 0;
+	intp_u_2 = 0;
   }
 
   c = (1.f - intp_rho) * ((1.f - intp_u_1) * c_1 + intp_u_1 * c_2) +
-      intp_rho * ((1.f - intp_u_2) * c_3 + intp_u_2 * c_4);
+	  intp_rho * ((1.f - intp_u_2) * c_3 + intp_u_2 * c_4);
 
   // Convert back from log
-  c = expf(c);
+  //c = expf(c);
 
   return c;
 }
@@ -780,7 +1015,7 @@ INLINE static float SESAME_soundspeed_from_pressure(
 INLINE static float SESAME_temperature_from_internal_energy(
     float density, float u, const struct SESAME_params *mat) {
 
-  float T, log_T, log_T_1, log_T_2, log_rho_1, log_rho_2;
+  float T, T_1, T_2, rho_1, rho_2;
 
   if (u <= 0.f) {
     return 0.f;
@@ -789,19 +1024,27 @@ INLINE static float SESAME_temperature_from_internal_energy(
   int idx_rho, idx_u_1, idx_u_2;
   float intp_rho, intp_u_1, intp_u_2;
   float slope, intercept;
-  const float log_rho = logf(density);
-  const float log_u = logf(u);
+  const float rho = density;
+  //const float log_rho = logf(density);
+  const float uu = u;
+  //const float log_u = logf(u);
 
   // 2D interpolation (bilinear with log(rho), log(u)) to find T(rho, u)
   // Density index
   idx_rho =
-      find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);
+      find_value_in_monot_incr_array(rho, mat->table_rho, mat->num_rho);
+  /*idx_rho =
+        find_value_in_monot_incr_array(log_rho, mat->table_log_rho, mat->num_rho);*/
 
   // Sp. int. energy at this and the next density (in relevant slice of u array)
   idx_u_1 = find_value_in_monot_incr_array(
-      log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+      uu, mat->table_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+  /*idx_u_1 = find_value_in_monot_incr_array(
+        log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);*/
   idx_u_2 = find_value_in_monot_incr_array(
-      log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+      uu, mat->table_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+  /*idx_u_2 = find_value_in_monot_incr_array(
+        log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);*/
 
   // If outside the table then extrapolate from the edge and edge-but-one values
   if (idx_rho <= -1) {
@@ -821,54 +1064,92 @@ INLINE static float SESAME_temperature_from_internal_energy(
   }
 
   // Check for duplicates in SESAME tables before interpolation
-  if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
-    intp_rho = (log_rho - mat->table_log_rho[idx_rho]) /
-               (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]);
+  if (mat->table_rho[idx_rho + 1] != mat->table_rho[idx_rho]) {
+    intp_rho = (rho - mat->table_rho[idx_rho]) /
+               (mat->table_rho[idx_rho + 1] - mat->table_rho[idx_rho]);
   } else {
     intp_rho = 1.f;
   }
-  if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
-      mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+  /*if (mat->table_log_rho[idx_rho + 1] != mat->table_log_rho[idx_rho]) {
+      intp_rho = (log_rho - mat->table_log_rho[idx_rho]) /
+                 (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]);
+    } else {
+      intp_rho = 1.f;
+    }*/
+  if (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+      mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
     intp_u_1 =
-        (log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
-        (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
-         mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+        (uu - mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+        (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+         mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
   } else {
     intp_u_1 = 1.f;
   }
-  if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
-      mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+  /*if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+        mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+      intp_u_1 =
+          (log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+          (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+           mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+    } else {
+      intp_u_1 = 1.f;
+    }*/
+  if (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+      mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
     intp_u_2 =
-        (log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
-        (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
-         mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+        (uu - mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+        (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+         mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
   } else {
     intp_u_2 = 1.f;
   }
+  /*if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+        mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+      intp_u_2 =
+          (log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+          (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+           mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+    } else {
+      intp_u_2 = 1.f;
+    }*/
 
   // Compute line points
-  log_rho_1 = mat->table_log_rho[idx_rho];
+  rho_1 = mat->table_rho[idx_rho];
+  rho_2 = mat->table_rho[idx_rho + 1];
+  T_1 = mat->table_T[idx_u_1];
+  T_1 += intp_u_1*(mat->table_T[idx_u_1 + 1] - mat->table_T[idx_u_1]);
+  T_2 = mat->table_T[idx_u_2];
+  T_2 += intp_u_2*(mat->table_T[idx_u_2 + 1] - mat->table_T[idx_u_2]);
+  /*log_rho_1 = mat->table_log_rho[idx_rho];
   log_rho_2 = mat->table_log_rho[idx_rho + 1];
   log_T_1 = mat->table_log_T[idx_u_1];
   log_T_1 += intp_u_1*(mat->table_log_T[idx_u_1 + 1] - mat->table_log_T[idx_u_1]);
   log_T_2 = mat->table_log_T[idx_u_2];
-  log_T_2 += intp_u_2*(mat->table_log_T[idx_u_2 + 1] - mat->table_log_T[idx_u_2]);
+  log_T_2 += intp_u_2*(mat->table_log_T[idx_u_2 + 1] - mat->table_log_T[idx_u_2]);*/
 
   // Intersect line passing through (log_rho_1, log_T_1), (log_rho_2, log_T_2)
   // with line density = log_rho
 
   // Check for log_T_1 == log_T_2
-  if (log_T_1 == log_T_2) {
-      log_T = log_T_1;
+  if (T_1 == T_2) {
+      T = T_1;
   } else {
       // log_rho = slope*log_T + intercept
-      slope = (log_rho_1 - log_rho_2)/(log_T_1 - log_T_2);
-      intercept = log_rho_1 - slope*log_T_1;
-      log_T = (log_rho - intercept)/slope;
+      slope = (rho_1 - rho_2)/(T_1 - T_2);
+      intercept = rho_1 - slope*T_1;
+      T = (rho - intercept)/slope;
   }
+  /*if (log_T_1 == log_T_2) {
+	log_T = log_T_1;
+  } else {
+	  // log_rho = slope*log_T + intercept
+	  slope = (log_rho_1 - log_rho_2)/(log_T_1 - log_T_2);
+	  intercept = log_rho_1 - slope*log_T_1;
+	  log_T = (log_rho - intercept)/slope;
+  }*/
 
   // Convert back from log
-  T = expf(log_T);
+  //T = expf(log_T);
 
   return T;
 }
@@ -877,7 +1158,7 @@ INLINE static float SESAME_temperature_from_internal_energy(
 INLINE static float SESAME_density_from_pressure_and_temperature(
     float P, float T, const struct SESAME_params *mat) {
 
-  float rho, log_rho, log_T_1, log_T_2, log_rho_1, log_rho_2;
+  float rho, T_1, T_2, rho_1, rho_2;
 
   if (P <= 0.f) {
     return 0.f;
@@ -886,12 +1167,15 @@ INLINE static float SESAME_density_from_pressure_and_temperature(
   int idx_T, idx_P_1, idx_P_2;
   float intp_T, intp_P_1, intp_P_2;
   float slope, intercept;
-  const float log_T = logf(T);
+  const float TT = T;
+  //const float log_T = logf(T);
 
   // 2D interpolation (bilinear with log(T), P to find rho(T, P)
   // Temperature index
   idx_T =
-      find_value_in_monot_incr_array(log_T, mat->table_log_T, mat->num_T);
+      find_value_in_monot_incr_array(TT, mat->table_T, mat->num_T);
+  /*idx_T =
+        find_value_in_monot_incr_array(log_T, mat->table_log_T, mat->num_T);*/
 
   // If outside the table then extrapolate from the edge and edge-but-one values
   if (idx_T <= -1) {
@@ -919,12 +1203,18 @@ INLINE static float SESAME_density_from_pressure_and_temperature(
   }
 
   // Check for duplicates in SESAME tables before interpolation
-  if (mat->table_log_T[idx_T + 1] != mat->table_log_T[idx_T]) {
-    intp_T = (log_T - mat->table_log_T[idx_T]) /
-               (mat->table_log_T[idx_T + 1] - mat->table_log_T[idx_T]);
+  if (mat->table_T[idx_T + 1] != mat->table_T[idx_T]) {
+    intp_T = (TT - mat->table_T[idx_T]) /
+               (mat->table_T[idx_T + 1] - mat->table_T[idx_T]);
   } else {
     intp_T = 1.f;
   }
+  /*if (mat->table_log_T[idx_T + 1] != mat->table_log_T[idx_T]) {
+	intp_T = (log_T - mat->table_log_T[idx_T]) /
+				(mat->table_log_T[idx_T + 1] - mat->table_log_T[idx_T]);
+  } else {
+	intp_T = 1.f;
+  }*/
   if (mat->table_P_rho_T[(idx_P_1 + 1) * mat->num_T + idx_T] !=
       mat->table_P_rho_T[idx_P_1 * mat->num_T + idx_T]) {
     intp_P_1 =
@@ -945,28 +1235,42 @@ INLINE static float SESAME_density_from_pressure_and_temperature(
   }
 
   // Compute line points
-  log_T_1 = mat->table_log_T[idx_T];
+  T_1 = mat->table_T[idx_T];
+  T_2 = mat->table_T[idx_T + 1];
+  rho_1 = mat->table_rho[idx_P_1];
+  rho_1 += intp_P_1*(mat->table_rho[idx_P_1 + 1] - mat->table_rho[idx_P_1]);
+  rho_2 = mat->table_rho[idx_P_2];
+  rho_2 += intp_P_2*(mat->table_rho[idx_P_2 + 1] - mat->table_rho[idx_P_2]);
+  /*log_T_1 = mat->table_log_T[idx_T];
   log_T_2 = mat->table_log_T[idx_T + 1];
   log_rho_1 = mat->table_log_rho[idx_P_1];
   log_rho_1 += intp_P_1*(mat->table_log_rho[idx_P_1 + 1] - mat->table_log_rho[idx_P_1]);
   log_rho_2 = mat->table_log_rho[idx_P_2];
-  log_rho_2 += intp_P_2*(mat->table_log_rho[idx_P_2 + 1] - mat->table_log_rho[idx_P_2]);
+  log_rho_2 += intp_P_2*(mat->table_log_rho[idx_P_2 + 1] - mat->table_log_rho[idx_P_2]);*/
 
   // Intersect line passing through (log_rho_1, log_T_1), (log_rho_2, log_T_2)
   // with line temperature = log_T
 
   // Check for log_rho_1 == log_rho_2
-  if (log_rho_1 == log_rho_2) {
-      log_rho = log_rho_1;
+  if (rho_1 == rho_2) {
+      rho = rho_1;
   } else {
       // log_T = slope*log_rho + intercept
-      slope = (log_T_1 - log_T_2)/(log_rho_1 - log_rho_2);
-      intercept = log_T_1 - slope*log_rho_1;
-      log_rho = (log_T - intercept)/slope;
+      slope = (T_1 - T_2)/(rho_1 - rho_2);
+      intercept = T_1 - slope*rho_1;
+      rho = (TT - intercept)/slope;
   }
+  /*if (log_rho_1 == log_rho_2) {
+        log_rho = log_rho_1;
+    } else {
+        // log_T = slope*log_rho + intercept
+        slope = (log_T_1 - log_T_2)/(log_rho_1 - log_rho_2);
+        intercept = log_T_1 - slope*log_rho_1;
+        log_rho = (log_T - intercept)/slope;
+    }*/
 
   // Convert back from log
-  rho = expf(log_rho);
+  //rho = expf(log_rho);
 
   return rho;
 }
@@ -980,22 +1284,30 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
   }
   
   // Convert inputs to log  
-  const float log_u = logf(u);
-  const float log_P = logf(P);
-  const float log_rho_ref = logf(rho_ref);  
+  const float uu = u;
+  //const float log_u = logf(u);
+  const float PP = P;
+  //const float log_P = logf(P);
+  const float rrho_ref = rho_ref;
+  //const float log_rho_ref = logf(rho_ref);
   
   // Find rounded down index of reference density. This is where we start our search
   int idx_rho_ref =
-      find_value_in_monot_incr_array(log_rho_ref, mat->table_log_rho, mat->num_rho);  
+      find_value_in_monot_incr_array(rrho_ref, mat->table_rho, mat->num_rho);
+  /*int idx_rho_ref =
+        find_value_in_monot_incr_array(log_rho_ref, mat->table_log_rho, mat->num_rho);*/
 
   // If no roots are found in the current search range, we increase search range
   // by search_factor_log_rho above and below the reference density each iteration.
-  const float search_factor_log_rho = logf(10.f);   
+  const float search_factor_rho = 10.f;
+  //const float search_factor_log_rho = logf(10.f);
     
     // Initialise the minimum and maximum densities we're searching to at the
     // reference density. These will change before the first iteration.
-    float log_rho_min = log_rho_ref;
-    float log_rho_max = log_rho_ref;
+    float rho_min = rrho_ref;
+    //float log_rho_min = log_rho_ref;
+    float rho_max = rrho_ref;
+    //float log_rho_max = log_rho_ref;
     
     // Initialise search indices around rho_ref
     int idx_rho_below_min, idx_rho_above_max;
@@ -1011,10 +1323,14 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
     P_below_lower = 0.f;
     
         // Increase search range by search_factor_log_rho
-        log_rho_max += search_factor_log_rho;
-        idx_rho_above_max = find_value_in_monot_incr_array(log_rho_max, mat->table_log_rho, mat->num_rho);
-        log_rho_min -= search_factor_log_rho; 
-        idx_rho_below_min = find_value_in_monot_incr_array(log_rho_min, mat->table_log_rho, mat->num_rho);        
+        rho_max += search_factor_rho;
+        idx_rho_above_max = find_value_in_monot_incr_array(rho_max, mat->table_rho, mat->num_rho);
+        rho_min -= search_factor_rho;
+        idx_rho_below_min = find_value_in_monot_incr_array(rho_min, mat->table_rho, mat->num_rho);
+        /*log_rho_max += search_factor_log_rho;
+		idx_rho_above_max = find_value_in_monot_incr_array(log_rho_max, mat->table_log_rho, mat->num_rho);
+		log_rho_min -= search_factor_log_rho;
+		idx_rho_below_min = find_value_in_monot_incr_array(log_rho_min, mat->table_log_rho, mat->num_rho);*/
               
         float P_1, P_2, P_3, P_4;
         int idx_rho, idx_u_1, idx_u_2;
@@ -1034,9 +1350,13 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
               
           // Sp. int. energy at this and the next density (in relevant slice of u array)
           idx_u_1 = find_value_in_monot_incr_array(
-              log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+              uu, mat->table_u_rho_T + idx_rho * mat->num_T, mat->num_T);
           idx_u_2 = find_value_in_monot_incr_array(
-              log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+              uu, mat->table_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+          /*idx_u_1 = find_value_in_monot_incr_array(
+			  log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+		  idx_u_2 = find_value_in_monot_incr_array(
+			  log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);*/
 
           // If outside the table then extrapolate from the edge and edge-but-one values
           if (idx_rho <= -1) {
@@ -1055,24 +1375,42 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
             idx_u_2 = mat->num_T - 2;
           }
 
-          if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
-              mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+          if (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+              mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
             intp_u_1 =
-                (log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
-                (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
-                 mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+                (uu - mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+                (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+                 mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
           } else {
             intp_u_1 = 1.f;
           }
-          if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
-              mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+          /*if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+			  mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+		    intp_u_1 =
+				(log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+				(mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+				 mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+          } else {
+        	  intp_u_1 = 1.f;
+          }*/
+          if (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+              mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
             intp_u_2 =
-                (log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
-                (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
-                 mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+                (uu - mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+                (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+                 mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
           } else {
             intp_u_2 = 1.f;
           }
+          /*if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+			  mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+		    intp_u_2 =
+			    (log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+				(mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+				 mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+          } else {
+        	  intp_u_2 = 1.f;
+          }*/
 
           // Table values
           P_1 = mat->table_P_rho_T[idx_rho * mat->num_T + idx_u_1];
@@ -1107,13 +1445,14 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
           }
 
           // Interpolate with the log values
-          P_1 = logf(P_1);
-          P_2 = logf(P_2);
-          P_3 = logf(P_3);
-          P_4 = logf(P_4);
+          //P_1 = logf(P_1);
+          //P_2 = logf(P_2);
+          //P_3 = logf(P_3);
+          //P_4 = logf(P_4);
 
             // Pressure for intp_rho = 0
-             P_above_lower = expf(((1.f - intp_u_1) * P_1 + intp_u_1 * P_2));
+             P_above_lower = ((1.f - intp_u_1) * P_1 + intp_u_1 * P_2);
+             //P_above_lower = expf(((1.f - intp_u_1) * P_1 + intp_u_1 * P_2));
             
             // Because of linear interpolation, pressures are not exactly continuous
             // as we go from one side of a grid point to another. See if there is
@@ -1121,22 +1460,31 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
             // which are approx the same.
             if (idx_rho != idx_rho_ref){
                 if ((P_above_lower - P) * (P_above_upper - P) <= 0){
-                    closest_root = expf(mat->table_log_rho[idx_rho]);
+                    closest_root = mat->table_rho[idx_rho];
                     break;
                 }       
             }  
+            /*if (idx_rho != idx_rho_ref){
+				if ((P_above_lower - P) * (P_above_upper - P) <= 0){
+					closest_root = expf(mat->table_log_rho[idx_rho]);
+					break;
+				}
+			}*/
             
             // Pressure for intp_rho = 1
-            P_above_upper = expf(((1.f - intp_u_2) * P_3 + intp_u_2 * P_4));
+            P_above_upper = ((1.f - intp_u_2) * P_3 + intp_u_2 * P_4);
+            //P_above_upper = expf(((1.f - intp_u_2) * P_3 + intp_u_2 * P_4));
         
             // Does the pressure of the adjacent table densities switch from being
             // above to below the desired pressure, or vice versa? If so, there is a root.
             if ((P_above_lower - P) * (P_above_upper - P) <= 0.f) {
                 
                     // If there is a root, interpolate between the table values:
-                  intp_rho = (log_P - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2)) / (((1 - intp_u_2) * P_3 + intp_u_2 * P_4) - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2));
+                  intp_rho = (PP - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2)) / (((1 - intp_u_2) * P_3 + intp_u_2 * P_4) - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2));
+                  //intp_rho = (log_P - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2)) / (((1 - intp_u_2) * P_3 + intp_u_2 * P_4) - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2));
                 
-                  closest_root = expf(mat->table_log_rho[idx_rho] + intp_rho * (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]));
+                  closest_root = mat->table_rho[idx_rho] + intp_rho * (mat->table_rho[idx_rho + 1] - mat->table_rho[idx_rho]);
+                  //closest_root = expf(mat->table_log_rho[idx_rho] + intp_rho * (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]));
                           
                   // If the root is between the same table values as the reference value, then this is the closest root,
                   // so we can return it without further searching
@@ -1150,18 +1498,26 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
         
         // if we found a root above, change search range below so that we're only looking for closer (in log) roots than the one we found
         if (closest_root){
-             log_rho_min = log_rho_ref -  (logf(closest_root) - log_rho_ref);
-             idx_rho_below_min = find_value_in_monot_incr_array(log_rho_min, mat->table_log_rho, mat->num_rho);
+             rho_min = rrho_ref -  (closest_root - rho_ref);
+             idx_rho_below_min = find_value_in_monot_incr_array(rho_min, mat->table_rho, mat->num_rho);
         }
+        /*if (closest_root){
+			 log_rho_min = log_rho_ref -  (logf(closest_root) - log_rho_ref);
+			 idx_rho_below_min = find_value_in_monot_incr_array(log_rho_min, mat->table_log_rho, mat->num_rho);
+		}*/
         
          // Now look for roots below rho_ref
         for (idx_rho = idx_rho_ref; idx_rho >= idx_rho_below_min; idx_rho--) {   
                    
           // Sp. int. energy at this and the next density (in relevant slice of u array)
           idx_u_1 = find_value_in_monot_incr_array(
-              log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+              uu, mat->table_u_rho_T + idx_rho * mat->num_T, mat->num_T);
           idx_u_2 = find_value_in_monot_incr_array(
-              log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+              uu, mat->table_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);
+          /*idx_u_1 = find_value_in_monot_incr_array(
+			  log_u, mat->table_log_u_rho_T + idx_rho * mat->num_T, mat->num_T);
+		  idx_u_2 = find_value_in_monot_incr_array(
+			  log_u, mat->table_log_u_rho_T + (idx_rho + 1) * mat->num_T, mat->num_T);*/
 
           // If outside the table then extrapolate from the edge and edge-but-one values
           if (idx_rho <= -1) {
@@ -1180,24 +1536,42 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
             idx_u_2 = mat->num_T - 2;
           }
 
-          if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
-              mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+          if (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+              mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
             intp_u_1 =
-                (log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
-                (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
-                 mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+                (uu - mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+                (mat->table_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+                 mat->table_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
           } else {
             intp_u_1 = 1.f;
           }
-          if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
-              mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+          /*if (mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] !=
+			  mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) {
+        	intp_u_1 =
+				(log_u - mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]) /
+				(mat->table_log_u_rho_T[idx_rho * mat->num_T + (idx_u_1 + 1)] -
+				 mat->table_log_u_rho_T[idx_rho * mat->num_T + idx_u_1]);
+          } else {
+        	intp_u_1 = 1.f;
+          }*/
+          if (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+              mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
             intp_u_2 =
-                (log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
-                (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
-                 mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+                (uu - mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+                (mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+                 mat->table_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
           } else {
             intp_u_2 = 1.f;
           }
+          /*if (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] !=
+			  mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) {
+        	intp_u_2 =
+			  (log_u - mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]) /
+			  (mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + (idx_u_2 + 1)] -
+			   mat->table_log_u_rho_T[(idx_rho + 1) * mat->num_T + idx_u_2]);
+          } else {
+		    intp_u_2 = 1.f;
+          }*/
 
           // Table values
           P_1 = mat->table_P_rho_T[idx_rho * mat->num_T + idx_u_1];
@@ -1232,25 +1606,28 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
           }
 
           // Interpolate with the log values
-          P_1 = logf(P_1);
-          P_2 = logf(P_2);
-          P_3 = logf(P_3);
-          P_4 = logf(P_4);
+          //P_1 = logf(P_1);
+          //P_2 = logf(P_2);
+          //P_3 = logf(P_3);
+          //P_4 = logf(P_4);
 
             // Pressure for intp_rho = 1
-            P_below_upper = expf(((1.f - intp_u_2) * P_3 + intp_u_2 * P_4));
+            P_below_upper = ((1.f - intp_u_2) * P_3 + intp_u_2 * P_4);
+            //P_below_upper = expf(((1.f - intp_u_2) * P_3 + intp_u_2 * P_4));
             // Because of linear interpolation, pressures are not exactly continuous
             // as we go from one side of a grid point to another. See if there is
             // a root between the last P_below_lower and the new P_below_upper,
             // which are approx the same.
             if (idx_rho != idx_rho_ref){
                 if ((P_below_lower - P) * (P_below_upper - P) <= 0){
-                    closest_root = expf(mat->table_log_rho[idx_rho + 1]);
+                    closest_root = mat->table_rho[idx_rho + 1];
+                    //closest_root = expf(mat->table_log_rho[idx_rho + 1]);
                     break;
                 }       
             }  
             // Pressure for intp_rho = 0
-             P_below_lower = expf(((1.f - intp_u_1) * P_1 + intp_u_1 * P_2));
+             P_below_lower = ((1.f - intp_u_1) * P_1 + intp_u_1 * P_2);
+             //P_below_lower = expf(((1.f - intp_u_1) * P_1 + intp_u_1 * P_2));
             
 
             // Does the pressure of the adjacent table densities switch from being
@@ -1258,18 +1635,27 @@ INLINE static float SESAME_density_from_pressure_and_internal_energy(
             if ((P_below_lower - P) * (P_below_upper - P) <= 0.f) {
 
                   // If there is a root, interpolate between the table values:
-                  intp_rho = (log_P - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2)) / (((1 - intp_u_2) * P_3 + intp_u_2 * P_4) - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2));
+                  intp_rho = (PP - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2)) / (((1 - intp_u_2) * P_3 + intp_u_2 * P_4) - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2));
+                  //intp_rho = (log_P - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2)) / (((1 - intp_u_2) * P_3 + intp_u_2 * P_4) - ((1 - intp_u_1) * P_1 + intp_u_1 * P_2));
                 
-                  root_below = expf(mat->table_log_rho[idx_rho] + intp_rho * (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]));
+                  root_below = mat->table_rho[idx_rho] + intp_rho * (mat->table_rho[idx_rho + 1] - mat->table_rho[idx_rho]);
+                  //root_below = expf(mat->table_log_rho[idx_rho] + intp_rho * (mat->table_log_rho[idx_rho + 1] - mat->table_log_rho[idx_rho]));
                   
                   // If we found a root above, which one is closer to the reference rho?
                   if (closest_root){
-                        if (fabs(logf(root_below) - logf(rho_ref)) < fabs(logf(closest_root) - logf(rho_ref))){
+                        if (fabs((root_below) - (rho_ref)) < fabs((closest_root) - (rho_ref))){
                             closest_root = root_below;
                         }        
                   }else{
                         closest_root = root_below;  
                   }
+                  /*if (closest_root){
+					  if (fabs(logf(root_below) - logf(rho_ref)) < fabs(logf(closest_root) - logf(rho_ref))){
+							  closest_root = root_below;
+					  }
+                  }else{
+					  closest_root = root_below;
+                  }*/
                   break;    
             }
         }  
